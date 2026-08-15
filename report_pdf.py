@@ -17,6 +17,7 @@ from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
                                 TableStyle, PageBreak)
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase.pdfmetrics import registerFontFamily
 
 GOLD = colors.HexColor("#b8973f")
 DARK = colors.HexColor("#242429")
@@ -38,6 +39,10 @@ try:
             _FONT_BOLD = "DejaVu-Bold"
         else:
             _FONT_BOLD = "DejaVu"
+        # tell reportlab that DejaVu-Bold is the bold variant of DejaVu, so
+        # that <b> tags inside paragraphs actually render bold.
+        registerFontFamily("DejaVu", normal="DejaVu", bold=_FONT_BOLD,
+                           italic="DejaVu", boldItalic=_FONT_BOLD)
 except Exception:
     pass
 
