@@ -102,7 +102,7 @@ def _profile_text(d: dict, format_value) -> str:
     val = d.get("value_eur")
     pred = d.get("predicted_value")
     parts = []
-    parts.append(f"<b>{name}</b> is a {age}-year-old {foot_desc}{str(style).lower()} operating in {pos}.")
+    parts.append(f"{name} is a {age}-year-old {foot_desc}{str(style).lower()} operating in {pos}.")
     if strengths:
         parts.append("The standout qualities are "
                      + ", ".join(strengths[:-1]) + (f" and {strengths[-1]}" if len(strengths) > 1 else strengths[0])
