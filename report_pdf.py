@@ -7,50 +7,64 @@ match the dark/gold UI on a light page (readable when printed).
 """
 from __future__ import annotations
 import io
+import os
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
                                 TableStyle, PageBreak)
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 GOLD = colors.HexColor("#b8973f")
 DARK = colors.HexColor("#242429")
 MUTED = colors.HexColor("#666666")
 
+# Register a Unicode font (DejaVu Sans) so the PDF can render Greek, Turkish,
+# and Central/Eastern European names correctly instead of showing boxes.
+_FONT = "Helvetica"          # fallback
+_FONT_BOLD = "Helvetica-Bold"
+_here = os.path.dirname(__file__)
+try:
+    _reg = os.path.join(_here, "DejaVuSans.ttf")
+    _bold = os.path.join(_here, "DejaVuSans-Bold.ttf")
+    if os.path.exists(_reg):
+        pdfmetrics.registerFont(TTFont("DejaVu", _reg))
+        _FONT = "DejaVu"
+        if os.path.exists(_bold):
+            pdfmetrics.registerFont(TTFont("DejaVu-Bold", _bold))
+            _FONT_BOLD = "DejaVu-Bold"
+        else:
+            _FONT_BOLD = "DejaVu"
+except Exception:
+    pass
+
 
 def _pdf_safe(s):
-    """Transliterate characters outside Latin-1 so the PDF font can render them.
+    """With a Unicode font registered, text passes through unchanged.
 
-    reportlab's built-in Helvetica only covers Latin-1, so Central/Eastern
-    European letters (ć, š, č, ž, ă, ...) would show as boxes. We map them to
-    the closest ASCII letter for the PDF only — the on-screen app keeps the
-    original spelling.
+    Kept as a thin wrapper so existing call sites keep working; if the DejaVu
+    font failed to load we fall back to dropping non-Latin-1 chars so the PDF
+    still builds instead of erroring.
     """
     if not isinstance(s, str):
         return s
-    table = {
-        "ć": "c", "Ć": "C", "č": "c", "Č": "C", "ç": "c", "Ç": "C",
-        "š": "s", "Š": "S", "ś": "s", "Ś": "S", "ş": "s", "Ş": "S",
-        "ž": "z", "Ž": "Z", "ź": "z", "Ź": "Z", "ż": "z", "Ż": "Z",
-        "ă": "a", "Ă": "A", "ā": "a", "Ā": "A", "ą": "a", "Ą": "A",
-        "ě": "e", "Ě": "E", "ę": "e", "Ę": "E", "ė": "e",
-        "ř": "r", "Ř": "R", "ł": "l", "Ł": "L", "ń": "n", "Ń": "N", "ň": "n",
-        "ţ": "t", "Ţ": "T", "ť": "t", "ə": "e", "ő": "o", "ű": "u",
-        "ů": "u", "đ": "d", "Đ": "D", "ħ": "h", "ı": "i", "İ": "I",
-        "ğ": "g", "Ğ": "G",
-    }
-    out = "".join(table.get(ch, ch) for ch in s)
-    # final safety net: drop anything still outside Latin-1
-    return out.encode("latin-1", "ignore").decode("latin-1")
+    if _FONT != "Helvetica":
+        return s  # Unicode font handles everything
+    return s.encode("latin-1", "ignore").decode("latin-1")
 
 
 def _styles():
     ss = getSampleStyleSheet()
-    ss.add(ParagraphStyle("H1x", parent=ss["Title"], textColor=GOLD, fontSize=20))
-    ss.add(ParagraphStyle("H2x", parent=ss["Heading2"], textColor=DARK, fontSize=13))
-    ss.add(ParagraphStyle("Small", parent=ss["Normal"], textColor=MUTED, fontSize=8))
-    ss.add(ParagraphStyle("Body", parent=ss["Normal"], fontSize=9.5, leading=13))
+    ss.add(ParagraphStyle("H1x", parent=ss["Title"], textColor=GOLD, fontSize=20,
+                          fontName=_FONT_BOLD))
+    ss.add(ParagraphStyle("H2x", parent=ss["Heading2"], textColor=DARK, fontSize=13,
+                          fontName=_FONT_BOLD))
+    ss.add(ParagraphStyle("Small", parent=ss["Normal"], textColor=MUTED, fontSize=8,
+                          fontName=_FONT))
+    ss.add(ParagraphStyle("Body", parent=ss["Normal"], fontSize=9.5, leading=13,
+                          fontName=_FONT))
     return ss
 
 
@@ -145,6 +159,8 @@ def build_report(result: dict, request: str, readable: str,
     t.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), DARK),
         ("TEXTCOLOR", (0, 0), (-1, 0), GOLD),
+        ("FONTNAME", (0, 0), (-1, 0), _FONT_BOLD),
+        ("FONTNAME", (0, 1), (-1, -1), _FONT),
         ("FONTSIZE", (0, 0), (-1, -1), 8),
         ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cccccc")),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f4f2ec")]),
