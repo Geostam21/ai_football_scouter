@@ -162,6 +162,23 @@ FOOT_KEYWORDS = {
     "two-footed": "either", "both feet": "either", "διποδος": "either", "and with both feet": "either",
 }
 
+# Characters that some fonts render as empty boxes (□). We transliterate only
+# these specific ones — NOT common accents like é/ö/ü/ñ, which render fine — so
+# names like "Emir Yazıcı" show as "Emir Yazici" instead of "Emir Yaz□c□".
+_DISPLAY_TRANSLIT = {
+    "ı": "i", "İ": "I", "ş": "s", "Ş": "S", "ğ": "g", "Ğ": "G",   # Turkish
+    "ł": "l", "Ł": "L", "ż": "z", "Ż": "Z", "ź": "z", "Ź": "Z",   # Polish
+    "ą": "a", "Ą": "A", "ę": "e", "Ę": "E", "ń": "n", "Ń": "N",   # Polish
+    "đ": "d", "Đ": "D",                                            # Croatian/Serbian
+    "ħ": "h", "Ħ": "H",                                            # Maltese
+}
+
+
+def _clean_display(s):
+    if not isinstance(s, str):
+        return s
+    return "".join(_DISPLAY_TRANSLIT.get(ch, ch) for ch in s)
+
 
 def load_players(path: str | Path | None = None) -> pd.DataFrame:
     """Load the cleaned FM23 dataset (works across pandas versions).
@@ -176,6 +193,10 @@ def load_players(path: str | Path | None = None) -> pd.DataFrame:
     if path is None:
         path = DATA_PATH_GZ if DATA_PATH_GZ.exists() else DATA_PATH
     df = pd.read_csv(path)
+    # transliterate box-rendering characters in names/clubs for clean display
+    for col in ("Name", "Club"):
+        if col in df.columns:
+            df[col] = df[col].apply(_clean_display)
     # rebuild positions column into lists (CSV stores it as 'DC|DL')
     def _to_list(s):
         if isinstance(s, list):
