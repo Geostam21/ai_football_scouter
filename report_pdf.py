@@ -8,6 +8,7 @@ match the dark/gold UI on a light page (readable when printed).
 from __future__ import annotations
 import io
 import os
+import unicodedata
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
@@ -42,14 +43,17 @@ except Exception:
 
 
 def _pdf_safe(s):
-    """With a Unicode font registered, text passes through unchanged.
+    """Normalise text so the PDF font renders it correctly.
 
-    Kept as a thin wrapper so existing call sites keep working; if the DejaVu
-    font failed to load we fall back to dropping non-Latin-1 chars so the PDF
-    still builds instead of erroring.
+    Converts to NFC (precomposed) form so that a letter+combining-accent pair
+    like "η"+◌́ becomes a single "ή" glyph the font can draw — otherwise the
+    stray combining accent shows as a box. With the Unicode font registered the
+    text otherwise passes through; if the font failed to load we drop non
+    Latin-1 chars so the PDF still builds.
     """
     if not isinstance(s, str):
         return s
+    s = unicodedata.normalize("NFC", s)
     if _FONT != "Helvetica":
         return s  # Unicode font handles everything
     return s.encode("latin-1", "ignore").decode("latin-1")
@@ -134,10 +138,10 @@ def build_report(result: dict, request: str, readable: str,
 
     # header
     story.append(Paragraph("AI Football Scouter — Scouting Report", ss["H1x"]))
-    story.append(Paragraph(f'Request: "{request}"', ss["Body"]))
-    story.append(Paragraph(f"Interpreted as: {readable}", ss["Small"]))
+    story.append(Paragraph(f'Request: "{_pdf_safe(request)}"', ss["Body"]))
+    story.append(Paragraph(f"Interpreted as: {_pdf_safe(readable)}", ss["Small"]))
     if team_note:
-        story.append(Paragraph(team_note, ss["Small"]))
+        story.append(Paragraph(_pdf_safe(team_note), ss["Small"]))
     story.append(Paragraph(f"Searched {result['pool_size']:,} matching players.", ss["Small"]))
     story.append(Spacer(1, 8))
 
