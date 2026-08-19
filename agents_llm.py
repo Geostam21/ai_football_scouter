@@ -38,6 +38,59 @@ def _default_weights(position_codes: list[str]) -> dict:
             return dict(_POSITION_DEFAULTS[code])
     # generic outfield default
     return {"Pac": 1.0, "Dri": 1.0, "Fin": 1.0, "Pas": 1.0, "Tck": 1.0}
+
+
+# Playing-style archetypes shift the emphasis WITHIN a position — a target man
+# and a poacher are both strikers but judged on different traits. When a style
+# is detected these weights are used instead of the plain positional defaults.
+_STYLE_DEFAULTS = {
+    "Poacher": {"Fin": 1.5, "OtB": 1.4, "Ant": 1.2, "Cmp": 1.2, "Acc": 1.1},
+    "Target Man": {"Hea": 1.5, "Str": 1.4, "Jum": 1.3, "Fin": 1.2, "Bra": 1.1},
+    "Complete Forward": {"Fin": 1.3, "Dri": 1.2, "Tec": 1.2, "OtB": 1.2, "Str": 1.1},
+    "Pressing Forward": {"Wor": 1.4, "Agg": 1.3, "Sta": 1.3, "Fin": 1.1, "Ant": 1.1},
+    "Inside Forward": {"Dri": 1.4, "Fin": 1.3, "Acc": 1.3, "Fla": 1.2, "Tec": 1.1},
+    "Classic Winger": {"Cro": 1.5, "Pac": 1.3, "Dri": 1.2, "Acc": 1.2},
+    "Wide Playmaker": {"Pas": 1.4, "Vis": 1.3, "Tec": 1.3, "Cro": 1.1, "Dri": 1.1},
+    "Work-rate Wideman": {"Wor": 1.4, "Sta": 1.3, "Tck": 1.2, "Cro": 1.1, "Pac": 1.1},
+    "Advanced Playmaker": {"Pas": 1.5, "Vis": 1.4, "Tec": 1.3, "Fla": 1.1, "OtB": 1.1},
+    "Shadow Striker": {"Fin": 1.4, "OtB": 1.4, "Lon": 1.2, "Ant": 1.2, "Dri": 1.1},
+    "Trequartista": {"Fla": 1.4, "Dri": 1.3, "Tec": 1.3, "Vis": 1.2, "Pas": 1.2},
+    "Deep-lying Playmaker": {"Pas": 1.5, "Vis": 1.4, "Tec": 1.3, "Dec": 1.2, "Cmp": 1.1},
+    "Box-to-Box": {"Sta": 1.4, "Wor": 1.3, "OtB": 1.2, "Tck": 1.1, "Fin": 1.1, "Pas": 1.1},
+    "Ball-winner": {"Tck": 1.5, "Mar": 1.4, "Agg": 1.3, "Wor": 1.2, "Ant": 1.1},
+    "Regista": {"Pas": 1.5, "Vis": 1.4, "Tec": 1.3, "Dec": 1.2, "Lon": 1.1},
+    "Anchor": {"Pos": 1.5, "Mar": 1.3, "Tck": 1.3, "Cnt": 1.2, "Ant": 1.2},
+    "Ball-winning DM": {"Tck": 1.5, "Agg": 1.4, "Str": 1.3, "Mar": 1.2, "Wor": 1.2},
+    "Ball-playing Defender": {"Pas": 1.4, "Tec": 1.3, "Cmp": 1.3, "Mar": 1.2, "Tck": 1.2},
+    "No-nonsense Stopper": {"Mar": 1.5, "Hea": 1.4, "Tck": 1.4, "Str": 1.3, "Pos": 1.2},
+    "Pace CB": {"Pac": 1.4, "Acc": 1.3, "Mar": 1.3, "Tck": 1.2, "Pos": 1.1},
+    "Attacking Full-back": {"Cro": 1.4, "Dri": 1.3, "Pac": 1.3, "Sta": 1.2, "OtB": 1.1},
+    "Wing-back": {"Sta": 1.4, "Wor": 1.3, "Pac": 1.3, "Cro": 1.2, "Tck": 1.1},
+    "Defensive Full-back": {"Tck": 1.5, "Mar": 1.4, "Pos": 1.3, "Str": 1.1, "Hea": 1.1},
+}
+
+# attribute words that signal the user asked for specific qualities (so we keep
+# the LLM's / mock's chosen weights instead of overriding with role defaults)
+_ATTR_KEYWORDS = None
+
+
+def _mentions_attributes(request: str) -> bool:
+    """True if the request names concrete qualities (not just a position)."""
+    global _ATTR_KEYWORDS
+    if _ATTR_KEYWORDS is None:
+        # build from attribute names + common quality synonyms, EL/EN/greeklish
+        base = {w.lower() for name in ATTRIBUTES.values() for w in name.split()}
+        base |= {"fast", "quick", "pace", "pacey", "strong", "tall", "aerial",
+                 "finishing", "clinical", "creative", "passing", "vision",
+                 "tackling", "defensive", "dribbling", "technical", "crossing",
+                 "physical", "composed", "leader", "workrate", "stamina",
+                 "γρηγορ", "δυνατ", "ψηλ", "τελειωμα", "πασ", "ντριμπλ",
+                 "τακλιν", "κρεμα", "μπαλα", "1v1", "1vs1", "αναχαιτ",
+                 "grigor", "dynat", "psil", "teleioma", "pas", "ntribl"}
+        _ATTR_KEYWORDS = base
+    low = " " + request.lower() + " "
+    return any(kw in low for kw in _ATTR_KEYWORDS)
+
 _ATTR_LIST = ", ".join(sorted(ATTRIBUTES.values()))
 
 _REQ_SYSTEM = f"""You are a football scouting assistant. Convert the user's request
@@ -78,7 +131,7 @@ class RequirementsAgent:
 
     def run(self, request: str) -> dict:
         raw = call_llm(_req_user_prompt(request), system=_REQ_SYSTEM, json_mode=True)
-        spec = self._to_spec(raw)
+        spec = self._to_spec(raw, request)
         spec["_request"] = request
         # league + nationality are detected from the raw text (robust across
         # both LLM and mock, since these are categorical filters)
@@ -255,7 +308,7 @@ class RequirementsAgent:
                     return club
         return None
 
-    def _to_spec(self, raw: str) -> dict:
+    def _to_spec(self, raw: str, request: str = "") -> dict:
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
@@ -275,7 +328,23 @@ class RequirementsAgent:
             code = key if key in ATTRIBUTES else resolve_attribute(key)
             if code:
                 weights[code] = float(w)
-        if not weights:
+
+        # If the user named no concrete qualities, prefer role-appropriate
+        # defaults over whatever generic weights the LLM guessed. Otherwise a
+        # bare "left back" gets scored on Pace/Dribbling/Finishing and ranks
+        # attack-minded wide players above actual defenders. A detected playing
+        # style refines this further (a target man vs a poacher), taking priority
+        # over the plain positional defaults.
+        if not _mentions_attributes(request):
+            from roles import detect_style
+            style = detect_style(request)
+            if style and style in _STYLE_DEFAULTS:
+                weights = dict(_STYLE_DEFAULTS[style])
+            elif position_codes:
+                weights = _default_weights(position_codes)
+            elif not weights:
+                weights = _default_weights(position_codes)
+        elif not weights:
             weights = _default_weights(position_codes)
 
         return {
