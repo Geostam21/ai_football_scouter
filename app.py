@@ -230,6 +230,20 @@ def run_player_fit(player_name, club_name):
     return fit
 
 
+def nat_label(row):
+    """Show 'PER, GRE' when a player holds a second nationality, else just 'PER'.
+
+    Dual nationals often surface in nationality-filtered searches through their
+    second passport, so showing it explains why they matched and helps with
+    non-EU roster planning.
+    """
+    nat = row.get("Nat", "") or ""
+    nat2 = row.get("nat2_code")
+    if isinstance(nat2, str) and nat2 and nat2 != nat:
+        return f"{nat}, {nat2}"
+    return nat
+
+
 def club_label(club):
     """Empty/NaN club -> 'Free agent'."""
     if not isinstance(club, str) or not club.strip():
@@ -481,7 +495,7 @@ if st.session_state.mode == "search" and st.session_state.result:
             "Player": p["name"], "Age": p["age"],
             "Positions": "/".join(r.get("positions", [])),
             "Style": p.get("style") or "",
-            "Club": club_label(p.get("club")), "Nat": r.get("Nat", ""),
+            "Club": club_label(p.get("club")), "Nat": nat_label(r),
             "Value (dataset)": format_value(p["value_eur"]),
             "Value (predicted)": format_value(r["predicted_value"]),
             "Suitability": p["suitability"],
@@ -651,7 +665,7 @@ if st.session_state.mode == "similar":
                 "Player": r["Name"], "Age": int(r["Age"]),
                 "Positions": "/".join(r.get("positions", [])),
                 "Style": (r.get("style") if isinstance(r.get("style"), str) else ""),
-                "Club": club_label(r.get("Club")), "Nat": r.get("Nat", ""),
+                "Club": club_label(r.get("Club")), "Nat": nat_label(r),
                 "Value (dataset)": format_value(r["value_mid"]),
                 "Value (predicted)": format_value(r["predicted_value"]),
                 "Similarity (lower=closer)": r["similarity_distance"],
