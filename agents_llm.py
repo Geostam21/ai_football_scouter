@@ -80,16 +80,25 @@ def _mentions_attributes(request: str) -> bool:
     if _ATTR_KEYWORDS is None:
         # build from attribute names + common quality synonyms, EL/EN/greeklish
         base = {w.lower() for name in ATTRIBUTES.values() for w in name.split()}
+        # drop words that also appear in non-attribute phrases and would cause
+        # false positives — e.g. "free" (from "Free Kicks") matching "free agent",
+        # or "long"/"work"/"rate" appearing in ordinary requests.
+        base -= {"free", "kicks", "long", "work", "rate", "throw", "set",
+                 "the", "of", "off", "ball"}
         base |= {"fast", "quick", "pace", "pacey", "strong", "tall", "aerial",
                  "finishing", "clinical", "creative", "passing", "vision",
                  "tackling", "defensive", "dribbling", "technical", "crossing",
                  "physical", "composed", "leader", "workrate", "stamina",
                  "γρηγορ", "δυνατ", "ψηλ", "τελειωμα", "πασ", "ντριμπλ",
                  "τακλιν", "κρεμα", "μπαλα", "1v1", "1vs1", "αναχαιτ",
-                 "grigor", "dynat", "psil", "teleioma", "pas", "ntribl"}
+                 "grigor", "dynat", "psil", "teleioma", "ntribl"}
         _ATTR_KEYWORDS = base
-    low = " " + request.lower() + " "
-    return any(kw in low for kw in _ATTR_KEYWORDS)
+    # word-boundary match so "pass" doesn't fire inside "passport" and short
+    # attribute words only match as whole words
+    import re
+    low = request.lower()
+    return any(re.search(r"\b" + re.escape(kw) + r"\b", low)
+               for kw in _ATTR_KEYWORDS)
 
 _ATTR_LIST = ", ".join(sorted(ATTRIBUTES.values()))
 
@@ -354,6 +363,7 @@ class RequirementsAgent:
             "max_value": data.get("max_value"),
             "min_value": data.get("min_value"),
             "weights": weights,
+            "explicit_qualities": _mentions_attributes(request),
             "top_n": int(data.get("top_n") or 10),
         }
 
