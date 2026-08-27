@@ -128,6 +128,16 @@ def get_system():
 
 S = get_system()
 
+
+@st.cache_resource
+def get_committee():
+    """The multi-agent scouting committee (built once, on top of the pipeline)."""
+    from committee import ScoutingCommittee
+    from orchestrator import ScoutingPipeline
+    # reuse the already-loaded players via a lightweight pipeline wrapper
+    pipe = ScoutingPipeline(S["players"])
+    return ScoutingCommittee(pipe)
+
 import base64, os as _os
 _logo_path = _os.path.join(_os.path.dirname(__file__), "scout_icon.png")
 _logo_html = ""
@@ -322,6 +332,10 @@ with st.expander(T["title"], expanded=False):
         st.session_state["_builder_prompt"] = built
 
 request = st.chat_input(T["chat_placeholder"])
+_committee_on = st.checkbox(
+    "🧑‍⚖️ Scouting-committee mode — three specialist agents (technical, "
+    "financial, tactical) assess each pick and a head scout decides",
+    key="committee_mode")
 # a prompt built from the guided panel is processed exactly like a typed one
 if st.session_state.get("_builder_prompt"):
     request = st.session_state.pop("_builder_prompt")
@@ -329,7 +343,12 @@ if request:
     st.session_state.request = request
     fit_q = detect_fit_query(request)
     frag = None if fit_q else extract_reference(request)
-    if fit_q:
+    if _committee_on and not fit_q and not frag:
+        st.session_state.mode = "committee"
+        with st.spinner("Convening the scouting committee…"):
+            st.session_state.committee_result = get_committee().review(
+                request, top_n=5)
+    elif fit_q:
         st.session_state.mode = "fit"
         st.session_state.fit_result = run_player_fit(*fit_q)
     elif frag:
@@ -362,6 +381,33 @@ if request:
 
 # ---------------- weight editor ----------------
 # ---------------- player-to-club fit ----------------
+if st.session_state.mode == "committee" and st.session_state.get("committee_result"):
+    cr = st.session_state.committee_result
+    club = cr.get("club")
+    st.subheader("Scouting committee verdict")
+    st.caption(f"Request: \"{cr['request']}\""
+               + (f" · target club: {club}" if club else "")
+               + " — ranked by the committee's aggregate score.")
+    _rec_color = {"PURSUE": "#2e9e5b", "CONSIDER": "#d99a2b", "PASS": "#c0433a"}
+    for v in cr["verdicts"]:
+        col = _rec_color.get(v["recommendation"], "#888")
+        st.markdown(
+            f"### {v['player']} &nbsp; "
+            f"<span style='background:{col};color:#fff;padding:2px 10px;"
+            f"border-radius:12px;font-size:0.8rem;'>{v['recommendation']}"
+            f" · {v['aggregate']}/100</span>", unsafe_allow_html=True)
+        acols = st.columns(3)
+        for ac, a in zip(acols, v["assessments"]):
+            score = a["score"] if a["score"] is not None else "—"
+            ac.markdown(f"**{a['agent']}**  \n`{score}`  \n"
+                        f"{a.get('argument', a.get('note', ''))}")
+        st.markdown(f"**Head Scout:** {v['verdict']}")
+        st.divider()
+    st.caption("Each specialist scores from data (the value model, team-fit "
+               "analyser and suitability engine); the head scout only writes the "
+               "synthesis, so the evidence stays reproducible.")
+
+
 if st.session_state.mode == "fit" and st.session_state.get("fit_result"):
     f = st.session_state.fit_result
     if f.get("error"):
