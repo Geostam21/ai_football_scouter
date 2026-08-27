@@ -458,6 +458,12 @@ if st.session_state.mode == "committee" and st.session_state.get("committee_resu
     st.caption("Each specialist scores from data (the value model, team-fit "
                "analyser and suitability engine); the head scout only writes the "
                "synthesis, so the evidence stays reproducible.")
+    if st.button("⬇ Build committee report (PDF)"):
+        with st.spinner("Building committee report…"):
+            from report_pdf import build_committee_report
+            pdf_bytes = build_committee_report(cr, format_value)
+        st.download_button("⬇ Download PDF", pdf_bytes,
+                           "committee_report.pdf", "application/pdf")
 
 
 if st.session_state.mode == "fit" and st.session_state.get("fit_result"):
