@@ -217,13 +217,18 @@ class ScoringAgent:
         raw = (score * 100)
         # Attribute scores alone can float veterans in semi-pro sides — whose FM
         # ratings for a few key attributes (e.g. a 35-year-old's Marking) haven't
-        # fully decayed — above better active players. We apply a gentle quality
-        # tilt: blend 65% of the requested-attribute score with 35% of the
-        # player's overall-ability percentile. This keeps the user's criteria
-        # dominant while stopping clearly past-it players from topping the list.
+        # fully decayed — above genuinely better players. We blend the requested-
+        # attribute score with the player's overall-ability percentile. When the
+        # user named specific qualities we keep their criteria dominant (65/35);
+        # when they only gave a position/category ("centre back", "free agent"),
+        # overall ability leads (35/65) so the strongest real players surface
+        # instead of past-it names in lower divisions.
         if "overall_ability" in pool.columns:
             oa_pct = pool["overall_ability"].rank(pct=True) * 100
-            pool["suitability"] = (0.65 * raw + 0.35 * oa_pct).round(1)
+            if spec.get("explicit_qualities"):
+                pool["suitability"] = (0.65 * raw + 0.35 * oa_pct).round(1)
+            else:
+                pool["suitability"] = (0.35 * raw + 0.65 * oa_pct).round(1)
         else:
             pool["suitability"] = raw.round(1)
 
