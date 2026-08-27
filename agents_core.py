@@ -208,13 +208,42 @@ class ScoringAgent:
             score += w * self._norm(pool, code)
 
         pool = pool.copy()
-        pool["suitability"] = (score * 100).round(1)   # 0-100 scale, readable
+        raw = (score * 100)
+        # Attribute scores alone can float veterans in semi-pro sides — whose FM
+        # ratings for a few key attributes (e.g. a 35-year-old's Marking) haven't
+        # fully decayed — above better active players. We apply a gentle quality
+        # tilt: blend 65% of the requested-attribute score with 35% of the
+        # player's overall-ability percentile. This keeps the user's criteria
+        # dominant while stopping clearly past-it players from topping the list.
+        if "overall_ability" in pool.columns:
+            oa_pct = pool["overall_ability"].rank(pct=True) * 100
+            pool["suitability"] = (0.65 * raw + 0.35 * oa_pct).round(1)
+        else:
+            pool["suitability"] = raw.round(1)
 
         # financial efficiency: suitability per €1M (bonus signal, section 6)
         val_m = (pool["value_mid"] / 1e6).replace(0, np.nan)
         pool["value_efficiency"] = (pool["suitability"] / val_m).round(1)
 
         top_n = spec.get("top_n", 10)
+        # "best/top" -> rank by overall ability rather than the attribute-weighted
+        # score. Overall ability already folds in age/decline, so it surfaces the
+        # genuinely strongest current players; a pure attribute score can float
+        # veterans in semi-pro sides whose FM ratings haven't fully decayed (e.g.
+        # a 35-year-old with still-high Marking) above better active players.
+        # We keep this to "best" queries where no explicit qualities were asked
+        # for, so specific attribute requests ("centre back with good passing")
+        # still rank on those attributes.
+        if spec.get("rank_by_quality") and not spec.get("explicit_qualities") \
+                and "overall_ability" in pool.columns:
+            pool = pool.sort_values("overall_ability", ascending=False,
+                                    na_position="last")
+            pool["suitability"] = (pool["overall_ability"].rank(pct=True)
+                                   * 100).round(1)
+            ranked = pool.head(top_n)
+            ranked.attrs["weights_used"] = weights
+            return ranked
+
         # Suitability ties are common when few attributes are weighted (FM ratings
         # are 1-20 integers), and a tie would otherwise be broken by row order —
         # which buried strong players under semi-pro ones on equal marks. Ties are
