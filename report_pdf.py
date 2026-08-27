@@ -294,3 +294,83 @@ def build_report(result: dict, request: str, readable: str,
     doc.build(story)
     buf.seek(0)
     return buf.read()
+
+
+def build_committee_report(cr: dict, format_value) -> bytes:
+    """Return PDF bytes for a scouting-committee review (verdicts + arguments)."""
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            topMargin=18 * mm, bottomMargin=16 * mm,
+                            leftMargin=16 * mm, rightMargin=16 * mm)
+    ss = _styles()
+    story = []
+
+    story.append(Paragraph("AI Football Scouter — Committee Report", ss["H1x"]))
+    story.append(Paragraph(f'Request: "{_pdf_safe(cr.get("request", ""))}"',
+                           ss["Body"]))
+    club = cr.get("club")
+    if club:
+        story.append(Paragraph(f"Target club: {_pdf_safe(str(club))}", ss["Small"]))
+    story.append(Paragraph("Each player is assessed by three specialist agents "
+                           "(technical, financial, tactical); the head scout "
+                           "reconciles them into a verdict. Scores come from the "
+                           "data models — only the reasoning is written.",
+                           ss["Small"]))
+    story.append(Spacer(1, 10))
+
+    rec_colors = {"PURSUE": colors.HexColor("#2e9e5b"),
+                  "CONSIDER": colors.HexColor("#d99a2b"),
+                  "PASS": colors.HexColor("#c0433a")}
+
+    for i, v in enumerate(cr.get("verdicts", []), 1):
+        rec = v.get("recommendation", "")
+        rc = rec_colors.get(rec, colors.grey)
+        # header line: name + recommendation + aggregate
+        meta = []
+        if v.get("age"):
+            meta.append(str(v["age"]))
+        if v.get("positions"):
+            meta.append("/".join(v["positions"]))
+        if v.get("club"):
+            club_txt = v["club"] if isinstance(v["club"], str) and v["club"].strip() \
+                else "Free agent"
+            meta.append(club_txt)
+        meta_txt = " · ".join(meta)
+        story.append(Paragraph(
+            f'{i}. {_pdf_safe(v["player"])} '
+            f'<font color="{rc.hexval()}"><b>[{rec} · {v.get("aggregate")}/100]</b>'
+            f'</font>', ss["H2x"]))
+        if meta_txt:
+            story.append(Paragraph(_pdf_safe(meta_txt), ss["Small"]))
+
+        # acquisition line
+        no_club = not (isinstance(v.get("club"), str) and v["club"].strip())
+        is_free = v.get("contract_status") == "expired" or no_club
+        acq = []
+        acq.append("Fee: Free agent" if is_free
+                   else f"Fee: {format_value(v.get('value_eur'))}"
+                   if v.get("value_eur") else "Fee: n/a")
+        if v.get("predicted_eur") and not is_free:
+            acq.append(f"Model value: {format_value(v['predicted_eur'])}")
+        if v.get("salary_eur"):
+            acq.append(f"Wage: {format_value(v['salary_eur'])}/yr")
+        contract = "FREE" if is_free else (v.get("contract_expires") or "-")
+        acq.append(f"Contract: {contract}")
+        story.append(Paragraph(_pdf_safe(" | ".join(acq)), ss["Small"]))
+        story.append(Spacer(1, 3))
+
+        # specialist arguments
+        for a in v.get("assessments", []):
+            score = a["score"] if a.get("score") is not None else "-"
+            story.append(Paragraph(
+                f'<b>{_pdf_safe(a["agent"])} [{score}]:</b> '
+                f'{_pdf_safe(a.get("argument", a.get("note", "")))}', ss["Body"]))
+
+        # head scout
+        story.append(Paragraph(
+            f'<b>Head Scout:</b> {_pdf_safe(v.get("verdict", ""))}', ss["Body"]))
+        story.append(Spacer(1, 12))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
