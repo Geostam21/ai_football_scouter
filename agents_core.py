@@ -137,8 +137,14 @@ class CandidateAgent:
         club_col = df["Club"].fillna("").astype(str).str.strip() if "Club" in df.columns else None
         if want_free or want_expired:
             avail = pd.Series(False, index=df.index)
-            if want_free and club_col is not None:
-                avail |= club_col.str.lower().isin(["", "-", "none", "nan"])
+            # a "free agent" is anyone available on a free transfer: no club on
+            # file OR an expired contract (the player's old club may still be
+            # listed even though the deal has run out).
+            if want_free:
+                if club_col is not None:
+                    avail |= club_col.str.lower().isin(["", "-", "none", "nan"])
+                if "contract_status" in df.columns:
+                    avail |= df["contract_status"] == "expired"
             if want_expired and "contract_status" in df.columns:
                 avail |= df["contract_status"] == "expired"
             mask &= avail
