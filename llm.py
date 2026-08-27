@@ -170,6 +170,15 @@ def _mock_requirements(prompt: str) -> str:
         if m2:
             min_age = int(m2.group(1))
 
+        # keyword-based age bands when no explicit number is given
+        if max_age is None and min_age is None:
+            if re.search(r"\b(young|youngster|prospect|wonderkid|νεαρ|νεος|talent)",
+                         text):
+                max_age = 21
+            elif re.search(r"\b(veteran|experienced|βετεραν|εμπειρ|ageing|"
+                           r"aging)", text):
+                min_age = 30
+
     # ---- budget: ranges first, then single upper bound ----
     max_value = None
     min_value = None
@@ -189,6 +198,14 @@ def _mock_requirements(prompt: str) -> str:
         if m:
             num = float(m.group(1).replace(",", "."))
             max_value = num * (1e6 if m.group(2).startswith("m") else 1e3)
+
+    # keyword-based budget when no explicit figure is given: "cheap"/"budget"/
+    # "affordable" imply a modest ceiling so the results aren't topped by the
+    # most expensive superstars.
+    if max_value is None and re.search(
+            r"\b(cheap|bargain|budget|affordable|φθην|φτην|οικονομικ|"
+            r"ftin|fthin|oikonomik)", text):
+        max_value = 10e6
 
     # ---- attributes: English + Greek + greeklish lexicon ----
     lexicon = dict(SYNONYMS)
@@ -251,13 +268,26 @@ def _mock_requirements(prompt: str) -> str:
         weights[code] = max(weights.get(code, 0), w)
 
     if not weights:
-        # position-aware default instead of always Pace/Dribbling/Finishing
-        gk = "GK" in position_codes
-        if gk:
+        # Position-aware defaults so a bare position query ("left back") ranks by
+        # the traits that role is actually judged on, instead of always falling
+        # back to Pace/Dribbling/Finishing (which buried good full-backs behind
+        # quick, attack-minded players with no defensive ability).
+        pc = set(position_codes)
+        if "GK" in pc:
             weights = {"Ref": 1.5, "Han": 1.3, "1v1": 1.2, "Cmd": 1.0}
-        elif any(c in position_codes for c in ("DC",)):
-            weights = {"Mar": 1.4, "Tck": 1.4, "Hea": 1.3, "Pos": 1.2}
-        elif any(c in position_codes for c in ("STC",)):
+        elif pc & {"DC"}:
+            weights = {"Mar": 1.4, "Tck": 1.4, "Hea": 1.3, "Pos": 1.2, "Str": 1.1}
+        elif pc & {"DR", "DL", "WBR", "WBL"}:
+            # full-backs / wing-backs: defend first, then get forward
+            weights = {"Tck": 1.3, "Mar": 1.2, "Pos": 1.2, "Cro": 1.1,
+                       "Pac": 1.1, "Sta": 1.1}
+        elif pc & {"DM"}:
+            weights = {"Tck": 1.3, "Pos": 1.3, "Mar": 1.2, "Pas": 1.1, "Wor": 1.1}
+        elif pc & {"MC", "MR", "ML"}:
+            weights = {"Pas": 1.2, "Vis": 1.2, "Tec": 1.1, "Wor": 1.1, "Sta": 1.1}
+        elif pc & {"AMC", "AMR", "AML"}:
+            weights = {"Dri": 1.2, "Tec": 1.2, "Pas": 1.1, "Fla": 1.1, "OtB": 1.1}
+        elif pc & {"STC"}:
             weights = {"Fin": 1.5, "OtB": 1.3, "Cmp": 1.2, "Pac": 1.1}
         else:
             weights = {"Pac": 1.0, "Dri": 1.0, "Fin": 1.0}
