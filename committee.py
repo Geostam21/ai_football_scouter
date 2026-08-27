@@ -69,7 +69,14 @@ class TechnicalScout(_Specialist):
         self.roles = roles
 
     def _evidence(self, row, spec) -> dict:
-        suit = float(row.get("_suitability", 0))
+        import math
+        suit = row.get("_suitability", 0)
+        try:
+            suit = float(suit)
+            if math.isnan(suit):
+                suit = 0.0
+        except (TypeError, ValueError):
+            suit = 0.0
         style = row.get("style") if isinstance(row.get("style"), str) else None
         top = row.get("_top_attrs") or []
         weak = row.get("_weak_attrs") or []
@@ -96,8 +103,17 @@ class FinancialAnalyst(_Specialist):
         self.vm = value_model
 
     def _evidence(self, row, spec) -> dict:
-        listed = float(row.get("value_mid") or 0)
-        pred = float(row.get("_predicted") or 0)
+        import math
+
+        def _num(v):
+            try:
+                v = float(v)
+                return 0.0 if math.isnan(v) else v
+            except (TypeError, ValueError):
+                return 0.0
+
+        listed = _num(row.get("value_mid"))
+        pred = _num(row.get("_predicted"))
         ratio = (pred / listed) if listed > 0 else 0
         if ratio >= self.vm.bargain_hi:
             verdict, score = "bargain", 90
