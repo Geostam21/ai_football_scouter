@@ -191,10 +191,6 @@ def run_search(spec):
                           "qualities.",
                 "team_note": team_note, "pool_size": 0}
     ranked = enrich(S["scoring"].run(pool, spec))
-    # "best" with no real attribute criteria -> rank by predicted quality
-    if spec.get("rank_by_quality") and set(spec.get("weights", {}).keys()) <= {"Pac", "Dri", "Fin"}:
-        ranked = ranked.sort_values("predicted_value", ascending=False).head(spec.get("top_n", 10))
-        ranked["suitability"] = (ranked["predicted_value"].rank(pct=True) * 100).round(1)
     shortlist = [summarise_player(r, spec) for _, r in ranked.iterrows()]
     # The LLM report is the slowest step (a second model call), so it's deferred:
     # results render immediately and the report is generated lazily on display.
@@ -345,7 +341,8 @@ if request:
     frag = None if fit_q else extract_reference(request)
     if _committee_on and not fit_q and not frag:
         st.session_state.mode = "committee"
-        with st.spinner("Convening the scouting committee…"):
+        with st.spinner("Convening the scouting committee… (evaluating each "
+                        "player from three angles)"):
             st.session_state.committee_result = get_committee().review(
                 request, top_n=5)
     elif fit_q:
@@ -391,17 +388,72 @@ if st.session_state.mode == "committee" and st.session_state.get("committee_resu
     _rec_color = {"PURSUE": "#2e9e5b", "CONSIDER": "#d99a2b", "PASS": "#c0433a"}
     for v in cr["verdicts"]:
         col = _rec_color.get(v["recommendation"], "#888")
+        meta = ""
+        if v.get("age") or v.get("positions"):
+            bits = []
+            if v.get("age"):
+                bits.append(str(v["age"]))
+            if v.get("positions"):
+                bits.append("/".join(v["positions"]))
+            if v.get("club"):
+                bits.append(club_label(v["club"]))
+            meta = " · ".join(bits)
         st.markdown(
             f"### {v['player']} &nbsp; "
             f"<span style='background:{col};color:#fff;padding:2px 10px;"
             f"border-radius:12px;font-size:0.8rem;'>{v['recommendation']}"
             f" · {v['aggregate']}/100</span>", unsafe_allow_html=True)
-        acols = st.columns(3)
-        for ac, a in zip(acols, v["assessments"]):
-            score = a["score"] if a["score"] is not None else "—"
-            ac.markdown(f"**{a['agent']}**  \n`{score}`  \n"
-                        f"{a.get('argument', a.get('note', ''))}")
-        st.markdown(f"**Head Scout:** {v['verdict']}")
+        if meta:
+            st.caption(meta)
+
+        # profile snapshot (radar + strengths/weaknesses) beside the arguments
+        prof_col, arg_col = st.columns([1, 2])
+        with prof_col:
+            idx = v.get("player_index")
+            if idx is not None and idx in S["players"].index:
+                try:
+                    st.pyplot(player_radar(S["players"].loc[idx]),
+                              use_container_width=True)
+                except Exception:
+                    pass
+            if v.get("top_attributes"):
+                strengths = ", ".join(f"{a} {val}"
+                                      for a, val in v["top_attributes"][:4])
+                st.markdown(f"**Strengths:** {strengths}")
+            if v.get("weaknesses"):
+                weak = ", ".join(f"{a} {val}" for a, val, *_ in v["weaknesses"][:3])
+                st.markdown(f"**Weaknesses:** {weak}")
+            # acquisition snapshot — the numbers a director needs to sign him
+            _club = v.get("club")
+            no_club = not isinstance(_club, str) or not _club.strip()
+            is_free = v.get("contract_status") == "expired" or no_club
+            fee = ("Free agent" if is_free
+                   else format_value(v["value_eur"]) if v.get("value_eur")
+                   else "n/a")
+            acq = [f"**Fee:** {fee}"]
+            if v.get("predicted_eur") and not is_free:
+                acq.append(f"**Model value:** {format_value(v['predicted_eur'])}")
+            if v.get("salary_eur"):
+                acq.append(f"**Wage:** {format_value(v['salary_eur'])}/yr")
+            contract = ("FREE" if is_free
+                        else v.get("contract_expires") or "—")
+            acq.append(f"**Contract:** {contract}")
+            nat = v.get("nat") or ""
+            if v.get("nat2"):
+                nat = f"{nat}, {v['nat2']}"
+            if nat:
+                acq.append(f"**Nationality:** {nat}")
+            st.markdown("  \n".join(acq))
+        with arg_col:
+            acols = st.columns(3)
+            _icons = {"Technical Scout": "⚽", "Financial Analyst": "💰",
+                      "Tactical Fit": "🎯"}
+            for ac, a in zip(acols, v["assessments"]):
+                score = a["score"] if a["score"] is not None else "—"
+                icon = _icons.get(a["agent"], "")
+                ac.markdown(f"**{icon} {a['agent']}**  \n`{score}`  \n"
+                            f"{a.get('argument', a.get('note', ''))}")
+            st.markdown(f"**Head Scout:** {v['verdict']}")
         st.divider()
     st.caption("Each specialist scores from data (the value model, team-fit "
                "analyser and suitability engine); the head scout only writes the "
