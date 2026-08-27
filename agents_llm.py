@@ -82,9 +82,11 @@ def _mentions_attributes(request: str) -> bool:
         base = {w.lower() for name in ATTRIBUTES.values() for w in name.split()}
         # drop words that also appear in non-attribute phrases and would cause
         # false positives — e.g. "free" (from "Free Kicks") matching "free agent",
-        # or "long"/"work"/"rate" appearing in ordinary requests.
+        # "out" (from "Off the Ball" variants / "out of contract"), or common
+        # filler words that show up in ordinary requests.
         base -= {"free", "kicks", "long", "work", "rate", "throw", "set",
-                 "the", "of", "off", "ball"}
+                 "the", "of", "off", "ball", "out", "contract", "in", "on",
+                 "position", "player", "players"}
         base |= {"fast", "quick", "pace", "pacey", "strong", "tall", "aerial",
                  "finishing", "clinical", "creative", "passing", "vision",
                  "tackling", "defensive", "dribbling", "technical", "crossing",
