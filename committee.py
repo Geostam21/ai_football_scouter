@@ -264,11 +264,14 @@ class ScoutingCommittee:
             r = row.copy()
             r["_suitability"] = row.get("suitability", 0)
             r["_predicted"] = preds.loc[idx] if idx in preds.index else 0
+            top_attrs, weak_attrs = [], []
             if self.dashboard is not None:
                 try:
                     d = self.dashboard.build(row, with_summary=False)
-                    r["_top_attrs"] = [a for a, _ in d.get("top_attributes", [])]
-                    r["_weak_attrs"] = [a for a, *_ in d.get("weaknesses", [])]
+                    top_attrs = d.get("top_attributes", [])
+                    weak_attrs = d.get("weaknesses", [])
+                    r["_top_attrs"] = [a for a, _ in top_attrs]
+                    r["_weak_attrs"] = [a for a, *_ in weak_attrs]
                 except Exception:
                     pass
             # 2. Specialists each argue their case (tool evidence + LLM reasoning)
@@ -278,7 +281,27 @@ class ScoutingCommittee:
                 self.tactical.assess(r, spec),
             ]
             # 3. Head Scout reconciles the debate
-            verdicts.append(HeadScout().decide(row["Name"], assessments))
+            v = HeadScout().decide(row["Name"], assessments)
+            # carry display data so the UI can render a profile card + radar
+            v["player_index"] = idx
+            v["top_attributes"] = top_attrs
+            v["weaknesses"] = weak_attrs
+            v["positions"] = row.get("positions") if isinstance(
+                row.get("positions"), list) else []
+            v["club"] = row.get("Club")
+            v["age"] = int(row["Age"]) if pd.notna(row.get("Age")) else None
+            # acquisition data — what a director needs to actually sign him
+            v["value_eur"] = (None if pd.isna(row.get("value_mid"))
+                              else int(row["value_mid"]))
+            v["salary_eur"] = (None if pd.isna(row.get("salary_eur"))
+                               else int(row["salary_eur"]))
+            v["predicted_eur"] = int(preds.loc[idx]) if idx in preds.index else None
+            v["contract_status"] = row.get("contract_status")
+            v["contract_expires"] = row.get("Expires")
+            v["nat"] = row.get("Nat")
+            v["nat2"] = row.get("nat2_code") if isinstance(
+                row.get("nat2_code"), str) else None
+            verdicts.append(v)
 
         verdicts.sort(key=lambda v: v["aggregate"], reverse=True)
         return {"request": request, "club": spec.get("club_name"),
